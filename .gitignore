@@ -1,0 +1,5 @@
+# Credenciales locales: nunca commitear
+*creds*.php
+!php/mail-creds.example.php
+*.log
+.DS_Store
