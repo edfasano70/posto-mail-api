@@ -43,6 +43,19 @@ abajo se heredan de las apps hermanas en `/var/www/html` (`openhouse`, `acla`).
   `HttpOnly`/`SameSite=Lax`.
 - Comentarios en español, alineados con los hermanos.
 
+## Herramientas
+
+- `test.php` — formulario web de prueba (envía directo por SMTP, pide la API key).
+- `GUIA_INSTALACION.txt` — guía detallada de instalación y despliegue.
+
+## Integración con apps hermanas
+
+- `openhouse/forgot.php` envía por esta API (ya no usa `mail()`): incluye
+  `/var/www/posto-mail-creds.php`, arma la URL con el mismo esquema/host
+  (`$_SERVER['HTTPS']` + `HTTP_HOST` + `/posto/api/send.php`) y envía con
+  `file_get_contents`. Al replicar el patrón recordar el `timeout` en el
+  contexto de stream.
+
 ## Gotchas verificados
 
 - Los `include` relativos (`include 'php/config.php'`) solo funcionan para

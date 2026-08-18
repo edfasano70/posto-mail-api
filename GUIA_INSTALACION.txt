@@ -1,0 +1,210 @@
+================================================================================
+ GUÍA DE INSTALACIÓN — API de envío de correo "posto" (SMTP Gmail)
+ Versión de la app: 1.0.0
+================================================================================
+
+INDICE
+  0. Resumen
+  1. Requisitos
+  2. Crear la contraseña de aplicación de Gmail (App Password)
+  3. Crear el archivo de credenciales (fuera del webroot)
+  4. Verificar la extensión openssl
+  5. Probar la API (curl)
+  6. Probar con el formulario web (test.php)
+  7. Uso de la API (parámetros, respuestas y códigos HTTP)
+  8. Seguridad
+  9. Despliegue a producción (VPS)
+ 10. Integración con otras apps (ej.: openhouse/forgot.php)
+ 11. Solución de problemas
+
+
+================================================================================
+ 0. RESUMEN
+================================================================================
+- App PHP pura (sin framework, sin librerías externas) que envía correos a
+  través de la cuenta de Gmail usando SMTP.
+- Endpoint público:  GET /posto/api/send.php
+- Respuestas siempre JSON: {"success":true} o {"success":false,"error":"..."}
+- Las credenciales NUNCA están en el código: viven en /var/www/posto-mail-creds.php
+  (fuera del webroot, inaccesible por HTTP).
+
+
+================================================================================
+ 1. REQUISITOS
+================================================================================
+- Servidor Apache + PHP (probado con PHP 8.3).
+- Extensión openssl de PHP (obligatoria para SMTPS). Ver sección 4.
+- Cuenta de Gmail con 2FA activado (para generar la App Password).
+- (Opcional) MySQL/MariaDB solo si se integra con apps hermanas.
+
+
+================================================================================
+ 2. CREAR LA CONTRASEÑA DE APLICACIÓN DE GMAIL (APP PASSWORD)
+================================================================================
+1. Ingresar a https://myaccount.google.com/apppasswords
+   (requiere 2FA activado en la cuenta; si no aparece la opción, activar 2FA).
+2. Nombre de la app: ej. "posto-api".
+3. Generar: entrega una clave de 16 caracteres con 4 grupos de 4
+   (ej. jwzm ahda wtkj wjra). Esa es la $smtp_pass.
+4. Guardarla SOLO en el archivo de credenciales (sección 3). No compartirla.
+
+
+================================================================================
+ 3. CREAR EL ARCHIVO DE CREDENCIALES
+================================================================================
+El archivo vive FUERA del webroot para que nunca sea accesible por HTTP.
+
+1. Copiar la plantilla del repo:
+   cp php/mail-creds.example.php /var/www/posto-mail-creds.php
+2. Editar /var/www/posto-mail-creds.php con:
+   <?php
+   $smtp_user = 'TU_CUENTA@gmail.com';   // cuenta remitente
+   $smtp_pass = 'APP_PASSWORD_16_CHARS'; // App Password del paso 2
+   $api_key   = 'CLAVE_SECRETA_ALEATORIA'; // la inventa el administrador
+3. Permisos de lectura para el usuario de Apache:
+   chown www-data:www-data /var/www/posto-mail-creds.php   (o root:root + 644)
+   chmod 644 /var/www/posto-mail-creds.php
+4. Generar una api_key fuerte (ej.):
+   php -r "echo bin2hex(random_bytes(24)), PHP_EOL;"
+   (48 caracteres aleatorios; usarla en TODAS las llamadas a la API)
+
+NOTA: la plantilla y este archivo NO deben subirse al repositorio git.
+El .gitignore de la app ya excluye *creds*.php.
+
+
+================================================================================
+ 4. VERIFICAR LA EXTENSIÓN OPENSSL
+================================================================================
+Desde el servidor (por SSH):
+   php -m | grep -i openssl          # debe listar "openssl"
+   php -r 'var_dump(extension_loaded("openssl"));'   # bool(true)
+Si falta (Ubuntu):
+   sudo apt install php-openssl      # o php8.x-openssl según versión
+   sudo systemctl restart apache2
+También se puede comprobar desde un navegador abriendo:
+   http://SERVIDOR/phpinfo.php  y buscando "openssl" (solo para diagnóstico;
+   conviene borrar phpinfo.php en producción).
+
+
+================================================================================
+ 5. PROBAR LA API (CURL)
+================================================================================
+Desde cualquier máquina con acceso al servidor:
+
+   curl -G "http://SERVIDOR/posto/api/send.php" \
+     --data-urlencode "key=CLAVE_API" \
+     --data-urlencode 'json={"email_dest":"destino@ejemplo.com","subject":"Hola","body":"Mensaje de prueba","reply_to":"remite@ejemplo.com"}'
+
+- reply_to es opcional.
+- Respuesta esperada: 200 {"success":true}
+
+Sin la key (debe dar 401):
+   curl "http://SERVIDOR/posto/api/send.php"
+
+
+================================================================================
+ 6. PROBAR CON EL FORMULARIO WEB (TEST.PHP)
+================================================================================
+Abrir en el navegador:
+   http://SERVIDOR/posto/test.php
+
+Completar: email_dest, subject, body, reply_to (opcional) y la API key.
+Es un formulario de PRUEBA: usarlo solo en desarrollo o restringir su acceso
+en producción (ver sección 9).
+
+
+================================================================================
+ 7. USO DE LA API
+================================================================================
+Endpoint:
+   GET /posto/api/send.php
+
+Parámetros (vía GET):
+   key        (requerido)  API key definida en /var/www/posto-mail-creds.php
+   email_dest (requerido)  destinatario
+   subject    (requerido)  asunto
+   body       (requerido)  cuerpo en texto plano
+   reply_to   (opcional)   dirección Reply-To
+
+Los parámetros se pueden enviar de dos formas:
+   a) Como JSON en un solo parámetro:
+      ?key=...&json={"email_dest":"a@b.com","subject":"Hola","body":"Texto","reply_to":"r@b.com"}
+      (el JSON se puede pasar también en el parámetro "data")
+   b) Como parámetros GET individuales:
+      ?key=...&email_dest=a@b.com&subject=Hola&body=Texto&reply_to=r@b.com
+
+Respuestas:
+   200 {"success":true}                              enviado OK
+   400 {"success":false,"error":"..."}               parámetros inválidos
+   401 {"success":false,"error":"API key inválida."} key incorrecta
+   500 {"success":false,"error":"..."}               error de configuración
+   502 {"success":false,"error":"..."}               falló el envío SMTP
+
+Características:
+   - Asunto y cuerpo en UTF-8 (asunto codificado RFC 2047).
+   - Autenticación AUTH LOGIN contra smtp.gmail.com:465 (SMTPS).
+   - Validación de emails con filter_var y rechazo de CR/LF (anti header injection).
+   - El body se escapa en SMTP (dot-stuffing).
+
+
+================================================================================
+ 8. SEGURIDAD
+================================================================================
+- La API es pública: cualquier persona con la api_key puede enviar correos
+  en nombre de la cuenta Gmail. Usar una api_key larga y aleatoria (sección 3).
+- No exponer /var/www/posto-mail-creds.php por HTTP (está fuera del webroot).
+- La key viaja en la URL (GET): puede quedar en logs de Apache o proxies.
+  Si el cuerpo o la privacidad importan, migrar el endpoint a POST con el JSON
+  en el body. Limitar también el largo del JSON (~8 KB por URL en Apache).
+- En producción desactivar APP_DEBUG en php/config.php (define('APP_DEBUG', false)).
+- El formulario test.php NO debe quedar accesible en producción
+  (restringir por IP o borrarlo).
+
+
+================================================================================
+ 9. DESPLIEGUE A PRODUCCIÓN (VPS)
+================================================================================
+Mismo flujo que las apps hermanas (ver ../openhouse/GUIA_DESPLIEGUE.txt):
+1. Copiar la carpeta posto/ al webroot del VPS (ej. /var/www/html/posto).
+2. Crear /var/www/posto-mail-creds.php en el VPS con las credenciales de
+   producción (NUNCA copiar credenciales del servidor local).
+3. php/config.php: definir APP_DEBUG en false.
+4. Verificar php-openssl en el VPS (sección 4).
+5. Si el VPS usa HTTPS, la app openhouse (forgot.php) llama a la API con el
+   mismo esquema https:// y el certificado válido, sin cambios.
+6. Probar (secciones 5 y 6).
+
+
+================================================================================
+ 10. INTEGRACIÓN CON OTRAS APPS (EJ.: OPENHOUSE/FORGOT.PHP)
+================================================================================
+openhouse/forgot.php (recuperación de contraseña) envía por esta API en lugar
+de mail() del PHP. El mecanismo:
+- Incluye /var/www/posto-mail-creds.php para leer $api_key.
+- Construye la URL de la API con el mismo esquema/host de la petición:
+  $scheme = (HTTPS) ? 'https' : 'http';
+  $apiUrl = $scheme . '://' . $_SERVER['HTTP_HOST'] . '/posto/api/send.php';
+- Envía con file_get_contents + http_build_query(key, json) y timeout 20 s.
+- Solo actualiza la contraseña temporal si la respuesta es {"success":true}.
+
+Para reutilizar este patrón en otra app: incluir el creds file, armar el query
+y parsear el JSON de respuesta.
+
+
+================================================================================
+ 11. SOLUCIÓN DE PROBLEMAS
+================================================================================
+- 401 "API key inválida."
+    La key enviada no coincide con $api_key del archivo de credenciales.
+    Verificar que la variable se llame EXACTAMENTE $api_key.
+- 500 "Credenciales no configuradas..."
+    Falta /var/www/posto-mail-creds.php o no es legible por el usuario de Apache.
+- 502 "No se pudo conectar a SMTP..."
+    Falta php-openssl, bloqueo de salida 465 del servidor o problemas de red.
+- 502 "Autenticación fallida"
+    $smtp_pass no es una App Password válida (o la cuenta no tiene 2FA).
+- "No se pudo enviar el correo" en forgot.php
+    La API no respondió (posto no desplegado en ese servidor, creds faltantes,
+    o falló SMTP). Revisar los puntos anteriores.
+- Recuerda: PHP 8 lanza TypeError si una variable no está definida (p. ej.
+  hash_equals($api_key,...) con $api_key ausente). Siempre verificar con isset().
