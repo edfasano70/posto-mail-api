@@ -1,65 +1,54 @@
 # AGENTS.md
 
-App PHP pura: API de envío de correo vía SMTP de Gmail. Las convenciones de
-abajo se heredan de las apps hermanas en `/var/www/html` (`openhouse`, `acla`).
+App PHP pura: API de envío de correo vía SMTP de Gmail. Sin framework, sin
+Composer, sin build, sin tests y **sin base de datos**. No copiar las secciones
+de BD/sesión de las apps hermanas (`openhouse`, `acla`): este repo no las usa.
 
-## Estado actual (API de correo)
+## Fuentes de verdad
 
-- `api/send.php` — endpoint público: `GET /posto/api/send.php?key=...&json={...}`.
-  Parámetros (`json` como objeto o como GET individuales): `email_dest`,
-  `subject`, `body`, `reply_to` (opcional). Responde JSON
-  `{"success":bool}` o `{"success":false,"error":...}`.
-- `php/smtp.php` — cliente SMTP puro (sin librerías): `smtp_send_gmail()`
-  contra `smtp.gmail.com:465` (SMTPS, AUTH LOGIN). Requiere ext-openssl.
-- Credenciales Gmail + API key viven en `/var/www/posto-mail-creds.php`
-  (fuera del webroot; plantilla `php/mail-creds.example.php`): expone
-  `$smtp_user`, `$smtp_pass` (App Password), `$api_key`.
-- PHP `mail()`/MTA local NO se usa: todo sale por SMTP de Gmail.
+- `api/send.php` — endpoint público `GET /posto/api/send.php`.
+  Parámetros: `key`, `email_dest`, `subject`, `body`, `reply_to` (opcional) y
+  `cc` (opcional). Pueden venir como JSON en `json` (alias `data`) o como GET
+  individuales. Responde JSON `{"success":bool}` con 400/401/500/502.
+- `php/smtp.php` — cliente SMTP propio contra `smtp.gmail.com:465` (SMTPS,
+  AUTH LOGIN). Firma actual:
+  `smtp_send_gmail($to, $subject, $body, $reply_to, $cc, $user, $pass)`.
+  Requiere ext-openssl.
+- `php/config.php` — `APP_DEBUG`/`APP_VERSION` y carga de credenciales.
+- `test.php` — formulario de prueba (envía directo por SMTP, pide la API key).
+- `GUIA_INSTALACION.txt` — instalación, despliegue, curl y troubleshooting.
+  Ante dudas de operación, consultar ahí antes de improvisar.
 
-## Stack y entorno
+## Credenciales y configuración
 
-- PHP sin framework + MySQL/MariaDB, servido por Apache directamente desde el
-  webroot. Sin composer, sin build, sin tests.
-- Servidor local de desarrollo: `192.168.1.150`, docroot `/var/www/html/posto`.
-  Producción: VPS `maticsson.ddns.net` (despliegue por copia directa; ver
-  `../openhouse/GUIA_DESPLIEGUE.txt`).
-- MySQL (extensión **mysqli**, no PDO).
-
-## Convenciones de código (patrón de las apps hermanas)
-
-- **Credenciales NUNCA en el código.** Cada archivo que use BD hace:
-  `include '/var/www/acla-creds.php';` (fuera del webroot) que expone
-  `$servername`, `$username`, `$password`. No definir credenciales locales.
-- Cabecera estándar de un endpoint:
-  `include 'php/config.php'; include 'php/display_errors.php'; include '/var/www/acla-creds.php'; include 'php/session.php';`
-- Sessión: `secure_session_start()` con **nombre de sesión por app** (evitar
-  colisión entre apps del mismo dominio). Token CSRF en `$_SESSION['csrf']`.
-- Errores visibles solo con `define('APP_DEBUG', true)` en `php/config.php`;
-  `php/display_errors.php` respeta esa bandera. Nunca mostrar errores sin debug.
-- Conexión: `new mysqli($servername, $username, $password, $dbname)`.
-- BD de autenticación separada (`* -app` con tabla `users`) + whitelist de BDs
-  operativas en `config.php`; validar el valor del usuario contra la whitelist.
-- Autenticación usa `session_regenerate_id(true)` tras login y cookies
-  `HttpOnly`/`SameSite=Lax`.
-- Comentarios en español, alineados con los hermanos.
-
-## Herramientas
-
-- `test.php` — formulario web de prueba (envía directo por SMTP, pide la API key).
-- `GUIA_INSTALACION.txt` — guía detallada de instalación y despliegue.
-
-## Integración con apps hermanas
-
-- `openhouse/forgot.php` envía por esta API (ya no usa `mail()`): incluye
-  `/var/www/posto-mail-creds.php`, arma la URL con el mismo esquema/host
-  (`$_SERVER['HTTPS']` + `HTTP_HOST` + `/posto/api/send.php`) y envía con
-  `file_get_contents`. Al replicar el patrón recordar el `timeout` en el
-  contexto de stream.
+- `$smtp_user`, `$smtp_pass` (App Password de Gmail) y `$api_key` viven en
+  `/var/www/posto-mail-creds.php`, **fuera del webroot**. Plantilla:
+  `php/mail-creds.example.php`. `.gitignore` excluye `*creds*.php`.
+- Sin ese archivo, `config.php` corta la ejecución ("Error de configuración." o
+  500). Al depurar, confirmar primero que exista y sea legible por Apache.
+- Nunca hardcodear credenciales ni copiar el archivo real al repo.
 
 ## Gotchas verificados
 
-- Los `include` relativos (`include 'php/config.php'`) solo funcionan para
-  archivos en la raíz de la app. Para archivos en subcarpetas (p. ej. `api/`)
-  usar rutas absolutas con `__DIR__`: `include __DIR__ . '/../php/config.php';`.
-- Endpoint en subcarpeta debe incluir también el cliente SMTP:
-  `include __DIR__ . '/../php/smtp.php';` antes de llamar `smtp_send_gmail()`.
+- En subcarpetas usar `__DIR__` (`api/send.php` incluye `__DIR__ . '/../php/...'`);
+  los `include` relativos solo funcionan en la raíz de la app.
+- Todo envío sale por SMTP de Gmail; `mail()`/MTA local no se usan.
+- No se permite CR/LF en `to`, `subject`, `reply_to` ni `cc`
+  (anti header-injection): validar igual cualquier parámetro nuevo.
+- `smtp_send_gmail` arma las cabeceras `To`/`Cc`/`Reply-To`, hace dot-stuffing
+  del body y codifica el asunto en RFC 2047.
+- **`test.php` replica la firma de `smtp_send_gmail()`** (y ya soporta CC):
+  mantener ambos sincronizados al cambiarla, o verificar por curl.
+
+## Entorno y despliegue
+
+- Desarrollo en el servidor local `192.168.1.150`, docroot
+  `/var/www/html/posto`; el working copy local es un espejo de esa carpeta.
+- Producción: VPS `maticsson.ddns.net`, copia directa (sin CI). Crear el
+  `posto-mail-creds.php` de producción aparte y dejar `APP_DEBUG` en `false`.
+- Verificar con `php -l` y un envío real (curl de la guía o `test.php`). No hay
+  suite de tests.
+- En el dev server el vhost de `192.168.1.150` (saludable) redirige a HTTPS y
+  tapa `/posto`; para probar por HTTP usar un Host que caiga en el vhost
+  default, p. ej. `curl -H 'Host: posto.test' http://192.168.1.150/posto/api/send.php`.
+- Git local sin remoto; commits marcados `v1.0.0` / `v1.1.0` (sin tags).

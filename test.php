@@ -12,6 +12,7 @@ $emailDest = isset($_POST['email_dest']) ? trim((string) $_POST['email_dest']) :
 $subject   = isset($_POST['subject'])    ? trim((string) $_POST['subject'])    : '';
 $body      = isset($_POST['body'])       ? (string) $_POST['body']             : '';
 $replyTo   = isset($_POST['reply_to'])   ? trim((string) $_POST['reply_to'])   : '';
+$cc        = isset($_POST['cc'])         ? trim((string) $_POST['cc'])         : '';
 $key       = isset($_POST['key'])        ? trim((string) $_POST['key'])        : '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -19,17 +20,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($configuredKey === '' || !hash_equals($configuredKey, $key)) {
         $msg = 'API key inválida.';
         $msgClass = 'danger';
+    } elseif (preg_match('/[\r\n]/', $emailDest . $subject . $replyTo . $cc)) {
+        $msg = 'Parámetros inválidos.';
+        $msgClass = 'danger';
     } elseif ($emailDest === '' || !filter_var($emailDest, FILTER_VALIDATE_EMAIL)) {
         $msg = 'email_dest no es un email válido.';
         $msgClass = 'danger';
     } elseif ($replyTo !== '' && !filter_var($replyTo, FILTER_VALIDATE_EMAIL)) {
         $msg = 'reply_to no es un email válido.';
         $msgClass = 'danger';
+    } elseif ($cc !== '' && !filter_var($cc, FILTER_VALIDATE_EMAIL)) {
+        $msg = 'cc no es un email válido.';
+        $msgClass = 'danger';
     } elseif ($subject === '' || $body === '') {
         $msg = 'Completá subject y body.';
         $msgClass = 'danger';
     } else {
-        $result = smtp_send_gmail($emailDest, $subject, $body, $replyTo, $smtp_user, $smtp_pass);
+        $result = smtp_send_gmail($emailDest, $subject, $body, $replyTo, $cc, $smtp_user, $smtp_pass);
         if ($result['ok']) {
             $msg = 'Correo enviado con éxito.';
             $msgClass = 'success';
@@ -77,6 +84,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <label class="form-label">reply_to (opcional)</label>
                         <input type="email" class="form-control" name="reply_to"
                                value="<?php echo htmlspecialchars($replyTo); ?>">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">cc (opcional)</label>
+                        <input type="email" class="form-control" name="cc"
+                               value="<?php echo htmlspecialchars($cc); ?>">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">API key</label>

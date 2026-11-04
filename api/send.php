@@ -2,10 +2,10 @@
 // API de envío de correo vía Gmail SMTP.
 //
 // Uso (GET):
-//   /posto/api/send.php?key=CLAVE&json={"email_dest":"a@b.com","subject":"Hola","body":"Mensaje","reply_to":"r@b.com"}
+//   /posto/api/send.php?key=CLAVE&json={"email_dest":"a@b.com","subject":"Hola","body":"Mensaje","reply_to":"r@b.com","cc":"c@b.com"}
 //
 // También acepta los parámetros como valores GET individuales:
-//   /posto/api/send.php?key=CLAVE&email_dest=a@b.com&subject=Hola&body=Mensaje&reply_to=r@b.com
+//   /posto/api/send.php?key=CLAVE&email_dest=a@b.com&subject=Hola&body=Mensaje&reply_to=r@b.com&cc=c@b.com
 //
 // Respuesta (JSON):
 //   {"success":true}
@@ -17,6 +17,7 @@
 //   subject    (requerido) asunto
 //   body       (requerido) cuerpo en texto plano
 //   reply_to   (opcional)  dirección Reply-To
+//   cc         (opcional)  dirección en copia (CC)
 
 include __DIR__ . '/../php/config.php';
 include __DIR__ . '/../php/display_errors.php';
@@ -47,6 +48,7 @@ $to       = isset($fields['email_dest']) ? (string) $fields['email_dest'] : (iss
 $subject  = isset($fields['subject'])    ? (string) $fields['subject']    : (isset($_GET['subject']) ? (string) $_GET['subject'] : '');
 $body     = isset($fields['body'])       ? (string) $fields['body']       : (isset($_GET['body']) ? (string) $_GET['body'] : '');
 $replyTo  = isset($fields['reply_to'])   ? (string) $fields['reply_to']   : (isset($_GET['reply_to']) ? (string) $_GET['reply_to'] : '');
+$cc       = isset($fields['cc'])          ? (string) $fields['cc']          : (isset($_GET['cc']) ? (string) $_GET['cc'] : '');
 
 // ---- Validaciones ----
 $configuredKey = isset($api_key) ? (string) $api_key : '';
@@ -54,8 +56,8 @@ if ($configuredKey === '' || !hash_equals($configuredKey, $apiKey)) {
     respond_error(401, 'API key inválida.');
 }
 
-// Evitar inyección de cabeceras: sin CR/LF en asunto, reply-to ni destinatario.
-if (preg_match('/[\r\n]/', $subject) || preg_match('/[\r\n]/', $replyTo) || preg_match('/[\r\n]/', $to)) {
+// Evitar inyección de cabeceras: sin CR/LF en asunto, reply-to, destinatario ni cc.
+if (preg_match('/[\r\n]/', $subject) || preg_match('/[\r\n]/', $replyTo) || preg_match('/[\r\n]/', $to) || preg_match('/[\r\n]/', $cc)) {
     respond_error(400, 'Parámetros inválidos.');
 }
 
@@ -68,6 +70,9 @@ if (!filter_var($to, FILTER_VALIDATE_EMAIL)) {
 if ($replyTo !== '' && !filter_var($replyTo, FILTER_VALIDATE_EMAIL)) {
     respond_error(400, 'reply_to no es un email válido.');
 }
+if ($cc !== '' && !filter_var($cc, FILTER_VALIDATE_EMAIL)) {
+    respond_error(400, 'cc no es un email válido.');
+}
 if ($subject === '') {
     respond_error(400, 'Falta el parámetro subject.');
 }
@@ -76,7 +81,7 @@ if ($body === '') {
 }
 
 // ---- Envío ----
-$result = smtp_send_gmail($to, $subject, $body, $replyTo, $smtp_user, $smtp_pass);
+$result = smtp_send_gmail($to, $subject, $body, $replyTo, $cc, $smtp_user, $smtp_pass);
 
 if ($result['ok']) {
     echo json_encode(['success' => true], JSON_UNESCAPED_UNICODE);

@@ -95,7 +95,7 @@ Desde cualquier máquina con acceso al servidor:
      --data-urlencode "key=CLAVE_API" \
      --data-urlencode 'json={"email_dest":"destino@ejemplo.com","subject":"Hola","body":"Mensaje de prueba","reply_to":"remite@ejemplo.com"}'
 
-- reply_to es opcional.
+- reply_to y cc son opcionales.
 - Respuesta esperada: 200 {"success":true}
 
 Sin la key (debe dar 401):
@@ -108,7 +108,8 @@ Sin la key (debe dar 401):
 Abrir en el navegador:
    http://SERVIDOR/posto/test.php
 
-Completar: email_dest, subject, body, reply_to (opcional) y la API key.
+Completar: email_dest, subject, body, reply_to (opcional), cc (opcional) y la
+API key.
 Es un formulario de PRUEBA: usarlo solo en desarrollo o restringir su acceso
 en producción (ver sección 9).
 
@@ -125,13 +126,14 @@ Parámetros (vía GET):
    subject    (requerido)  asunto
    body       (requerido)  cuerpo en texto plano
    reply_to   (opcional)   dirección Reply-To
+   cc         (opcional)   dirección en copia (CC)
 
 Los parámetros se pueden enviar de dos formas:
    a) Como JSON en un solo parámetro:
-      ?key=...&json={"email_dest":"a@b.com","subject":"Hola","body":"Texto","reply_to":"r@b.com"}
+      ?key=...&json={"email_dest":"a@b.com","subject":"Hola","body":"Texto","reply_to":"r@b.com","cc":"c@b.com"}
       (el JSON se puede pasar también en el parámetro "data")
    b) Como parámetros GET individuales:
-      ?key=...&email_dest=a@b.com&subject=Hola&body=Texto&reply_to=r@b.com
+      ?key=...&email_dest=a@b.com&subject=Hola&body=Texto&reply_to=r@b.com&cc=c@b.com
 
 Respuestas:
    200 {"success":true}                              enviado OK
@@ -143,6 +145,7 @@ Respuestas:
 Características:
    - Asunto y cuerpo en UTF-8 (asunto codificado RFC 2047).
    - Autenticación AUTH LOGIN contra smtp.gmail.com:465 (SMTPS).
+   - Cabeceras To/Cc/Reply-To; el Cc se agrega solo si se envía.
    - Validación de emails con filter_var y rechazo de CR/LF (anti header injection).
    - El body se escapa en SMTP (dot-stuffing).
 

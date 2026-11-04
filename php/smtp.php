@@ -28,11 +28,12 @@ function smtp_read_response($fp) {
  * @param string $subject    Asunto.
  * @param string $body       Cuerpo del mensaje (texto plano).
  * @param string $reply_to   Opcional: Reply-To.
+ * @param string $cc         Opcional: dirección en copia (CC).
  * @param string $user       Cuenta Gmail remitente.
  * @param string $pass       Contraseña de aplicación (App Password).
  * @return array{ok: bool, error: string}
  */
-function smtp_send_gmail($to, $subject, $body, $reply_to, $user, $pass) {
+function smtp_send_gmail($to, $subject, $body, $reply_to, $cc, $user, $pass) {
     $host = 'smtp.gmail.com';
     $port = 465;
 
@@ -91,6 +92,14 @@ function smtp_send_gmail($to, $subject, $body, $reply_to, $user, $pass) {
         fclose($fp);
         return ['ok' => false, 'error' => "RCPT TO rechazado ({$code}): {$text}"];
     }
+    if ($cc !== '') {
+        fwrite($fp, "RCPT TO:<{$cc}>\r\n");
+        list($code, $text) = smtp_read_response($fp);
+        if ($code !== 250) {
+            fclose($fp);
+            return ['ok' => false, 'error' => "RCPT TO (CC) rechazado ({$code}): {$text}"];
+        }
+    }
 
     // DATA
     fwrite($fp, "DATA\r\n");
@@ -102,6 +111,9 @@ function smtp_send_gmail($to, $subject, $body, $reply_to, $user, $pass) {
 
     $headers = "From: {$user}\r\n";
     $headers .= "To: {$to}\r\n";
+    if ($cc !== '') {
+        $headers .= "Cc: {$cc}\r\n";
+    }
     if ($reply_to !== '') {
         $headers .= "Reply-To: {$reply_to}\r\n";
     }

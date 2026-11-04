@@ -5,7 +5,7 @@
 // que las necesite.
 
 // Errores visibles SOLO en desarrollo. Cambiar a false en producción.
-define('APP_DEBUG', true);
+define('APP_DEBUG', false);
 
 // Versión de la aplicación.
 define('APP_VERSION', '1.0.0');
