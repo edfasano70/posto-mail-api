@@ -6,15 +6,19 @@ API mínima en PHP para enviar correo por SMTP de Gmail. Sin framework, sin
 Composer, sin base de datos y sin build: solo un endpoint HTTP y un cliente SMTP
 propio.
 
+**Producción:** https://posto.45.79.220.248.sslip.io (API-only; la raíz `/`
+devuelve 403 porque no hay `index`).
+
 ## Características
 
 - Endpoint público `GET /posto/api/send.php`.
 - Autenticación por API key (`key`).
 - Envío vía `smtp.gmail.com:465` (SMTPS, AUTH LOGIN) con una App Password de
   Gmail. Requiere la extensión `openssl` de PHP.
-- Destinatario, asunto, cuerpo, `Reply-To` y `CC` opcionales.
+- `email_dest`, `subject` y `body` requeridos; `reply_to` y `cc` opcionales.
 - Asunto codificado en RFC 2047 (UTF-8), dot-stuffing del cuerpo y rechazo de
   CR/LF para evitar header injection.
+- Rate limit por IP y límites configurables de tamaño de asunto/cuerpo.
 - Respuestas JSON y códigos HTTP claros.
 
 ## Requisitos
@@ -101,7 +105,8 @@ curl -G "https://SERVIDOR/posto/api/send.php" \
 ## Formulario de prueba
 
 `test.php` es un formulario web para enviar un correo de prueba pidiendo la API
-key. Úsalo solo en desarrollo o restringí su acceso en producción.
+key. En desarrollo es útil; en la producción de Linode está bloqueado por el
+vhost (403).
 
 ## Estructura
 
@@ -149,9 +154,9 @@ export SSHPASS='...'
 ./deploy.sh
 ```
 
-Copia directa de la carpeta al webroot del servidor (sin CI), creando el archivo
-de credenciales de producción por separado. Ver
-[`GUIA_INSTALACION.txt`](GUIA_INSTALACION.txt) sección 9.
+El deploy es manual (rsync + reload); el CI de GitHub solo valida sintaxis con
+`php -l`. El vhost bloquea `php/config.php`, `test.php`, `.md/.txt/.sql` y
+dotfiles. Ver [`GUIA_INSTALACION.txt`](GUIA_INSTALACION.txt) sección 9.
 
 ## Licencia
 
