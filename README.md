@@ -1,5 +1,7 @@
 # posto-mail-api
 
+[![Lint PHP](https://github.com/edfasano70/posto-mail-api/actions/workflows/lint.yml/badge.svg)](https://github.com/edfasano70/posto-mail-api/actions/workflows/lint.yml)
+
 API mínima en PHP para enviar correo por SMTP de Gmail. Sin framework, sin
 Composer, sin base de datos y sin build: solo un endpoint HTTP y un cliente SMTP
 propio.
@@ -91,6 +93,8 @@ curl -G "https://SERVIDOR/posto/api/send.php" \
 | 200  | `{"success":true}`                                  | Correo enviado             |
 | 400  | `{"success":false,"error":"..."}`                   | Parámetros inválidos       |
 | 401  | `{"success":false,"error":"API key inválida."}`     | API key incorrecta         |
+| 413  | `{"success":false,"error":"..."}`                   | Body demasiado grande      |
+| 429  | `{"success":false,"error":"..."}`                   | Rate limit por IP          |
 | 500  | `{"success":false,"error":"..."}`                   | Error de configuración     |
 | 502  | `{"success":false,"error":"..."}`                   | Falló el envío SMTP        |
 
@@ -104,11 +108,14 @@ key. Úsalo solo en desarrollo o restringí su acceso en producción.
 ```
 api/send.php              Endpoint HTTP
 php/smtp.php              Cliente SMTP (Gmail)
-php/config.php            APP_DEBUG, APP_VERSION y carga de credenciales
+php/config.php            APP_DEBUG, APP_VERSION, límites y credenciales
 php/display_errors.php    Control de errores según APP_DEBUG
 php/mail-creds.example.php  Plantilla de credenciales
 test.php                  Formulario de prueba
 GUIA_INSTALACION.txt      Guía operativa completa
+deploy.sh                 rsync + permisos + reload de Apache
+.github/workflows/lint.yml  CI de sintaxis PHP
+LICENSE                   Licencia MIT
 ```
 
 ## Seguridad
@@ -118,10 +125,34 @@ GUIA_INSTALACION.txt      Guía operativa completa
   `*creds*.php`.
 - Usar una API key larga y aleatoria. La key viaja en la URL: puede quedar en
   logs de Apache o proxies.
+- Rate limit por IP (60 peticiones/min por defecto) y límites de tamaño
+  (subject 1000 bytes, body 100000 bytes), configurables en `php/config.php`.
 - En producción dejar `APP_DEBUG` en `false` y no exponer `test.php`.
 
+## Limitaciones
+
+- Un solo destinatario por envío; sin adjuntos ni HTML.
+- Solo `GET` (los parámetros pueden ir en `json`, `data` o GET individuales).
+- Sin persistencia ni cola: si el SMTP falla, el envío no se reintenta.
+
 ## Despliegue
+
+Producción actual en Linode:
+
+- URL: https://posto.45.79.220.248.sslip.io
+- DocumentRoot: `/var/www/posto`
+- Vhost: `posto.conf` + `posto-le-ssl.conf` (Let's Encrypt)
+- Credenciales: `/var/www/posto-mail-creds.php` (fuera del webroot)
+
+```bash
+export SSHPASS='...'
+./deploy.sh
+```
 
 Copia directa de la carpeta al webroot del servidor (sin CI), creando el archivo
 de credenciales de producción por separado. Ver
 [`GUIA_INSTALACION.txt`](GUIA_INSTALACION.txt) sección 9.
+
+## Licencia
+
+[MIT](LICENSE).

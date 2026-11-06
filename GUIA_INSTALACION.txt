@@ -1,6 +1,6 @@
 ================================================================================
  GUÍA DE INSTALACIÓN — API de envío de correo "posto" (SMTP Gmail)
- Versión de la app: 1.0.0
+ Versión de la app: 1.3.0
 ================================================================================
 
 INDICE
@@ -139,6 +139,8 @@ Respuestas:
    200 {"success":true}                              enviado OK
    400 {"success":false,"error":"..."}               parámetros inválidos
    401 {"success":false,"error":"API key inválida."} key incorrecta
+   413 {"success":false,"error":"..."}               body demasiado grande
+   429 {"success":false,"error":"..."}               rate limit por IP
    500 {"success":false,"error":"..."}               error de configuración
    502 {"success":false,"error":"..."}               falló el envío SMTP
 
@@ -147,7 +149,9 @@ Características:
    - Autenticación AUTH LOGIN contra smtp.gmail.com:465 (SMTPS).
    - Cabeceras To/Cc/Reply-To; el Cc se agrega solo si se envía.
    - Validación de emails con filter_var y rechazo de CR/LF (anti header injection).
-   - El body se escapa en SMTP (dot-stuffing).
+   - El body se escapa en SMTP (dot-stuffing) tras normalizar los saltos de línea.
+   - Límites: subject 1000 bytes, body 100000 bytes, 60 peticiones/min por IP
+     (ajustables en php/config.php).
 
 
 ================================================================================
@@ -159,16 +163,25 @@ Características:
 - La key viaja en la URL (GET): puede quedar en logs de Apache o proxies.
   Si el cuerpo o la privacidad importan, migrar el endpoint a POST con el JSON
   en el body. Limitar también el largo del JSON (~8 KB por URL en Apache).
+- Rate limit por IP (60 peticiones/min por defecto) y límites de tamaño
+  (subject 1000 bytes, body 100000 bytes), configurables en php/config.php.
 - En producción desactivar APP_DEBUG en php/config.php (define('APP_DEBUG', false)).
 - El formulario test.php NO debe quedar accesible en producción
   (restringir por IP o borrarlo).
 
 
 ================================================================================
- 9. DESPLIEGUE A PRODUCCIÓN (VPS)
+ 9. DESPLIEGUE A PRODUCCIÓN (LINODE)
 ================================================================================
-Mismo flujo que las apps hermanas (ver ../openhouse/GUIA_DESPLIEGUE.txt):
-1. Copiar la carpeta posto/ al webroot del VPS (ej. /var/www/html/posto).
+Producción actual: https://posto.45.79.220.248.sslip.io
+- DocumentRoot: /var/www/posto
+- Vhost: /etc/apache2/sites-available/posto.conf (+ posto-le-ssl.conf de certbot)
+- Credenciales: /var/www/posto-mail-creds.php (fuera del webroot, chmod 640)
+- Deploy: export SSHPASS='...' && ./deploy.sh
+- El vhost bloquea config.php, test.php, .md/.txt/.sql y dotfiles.
+
+Flujo manual (equivalente a las apps hermanas):
+1. Copiar la carpeta posto/ al webroot del VPS (ej. /var/www/posto).
 2. Crear /var/www/posto-mail-creds.php en el VPS con las credenciales de
    producción (NUNCA copiar credenciales del servidor local).
 3. php/config.php: definir APP_DEBUG en false.
@@ -200,8 +213,15 @@ y parsear el JSON de respuesta.
 - 401 "API key inválida."
     La key enviada no coincide con $api_key del archivo de credenciales.
     Verificar que la variable se llame EXACTAMENTE $api_key.
-- 500 "Credenciales no configuradas..."
+- 500 "Credenciales no configuradas..." (APP_DEBUG=true) o "Error de
+  configuración." (APP_DEBUG=false)
     Falta /var/www/posto-mail-creds.php o no es legible por el usuario de Apache.
+- 413 "body demasiado grande."
+    El cuerpo supera MAX_BODY_BYTES (100000). Ajustar en php/config.php o
+    enviar un texto más corto.
+- 429 "Demasiadas solicitudes."
+    Se superó RATE_LIMIT_MAX por IP dentro de RATE_LIMIT_WINDOW. Reintentar
+    después del tiempo indicado en el header Retry-After.
 - 502 "No se pudo conectar a SMTP..."
     Falta php-openssl, bloqueo de salida 465 del servidor o problemas de red.
 - 502 "Autenticación fallida"

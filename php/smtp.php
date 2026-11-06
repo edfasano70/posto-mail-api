@@ -34,6 +34,11 @@ function smtp_read_response($fp) {
  * @return array{ok: bool, error: string}
  */
 function smtp_send_gmail($to, $subject, $body, $reply_to, $cc, $user, $pass) {
+    // Defensa en profundidad: no permitir inyección de cabeceras.
+    if (preg_match('/[\r\n]/', $to . $subject . $reply_to . $cc)) {
+        return ['ok' => false, 'error' => 'Parámetros inválidos: CR/LF no permitido.'];
+    }
+
     $host = 'smtp.gmail.com';
     $port = 465;
 
@@ -124,9 +129,9 @@ function smtp_send_gmail($to, $subject, $body, $reply_to, $cc, $user, $pass) {
     $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
     $headers .= "Content-Transfer-Encoding: 8bit\r\n";
 
-    // Punto de terminación SMTP: líneas que empiezan con "." se duplican.
-    $safe_body = preg_replace('/^\./m', '..', $body);
-    $safe_body = str_replace("\r\n", "\n", $safe_body);
+    // Normalizar saltos de línea (incluye \r suelto) y luego hacer dot-stuffing.
+    $safe_body = str_replace(["\r\n", "\r"], "\n", $body);
+    $safe_body = preg_replace('/^\./m', '..', $safe_body);
     $safe_body = str_replace("\n", "\r\n", $safe_body);
 
     fwrite($fp, $headers . "\r\n" . $safe_body . "\r\n.\r\n");
